@@ -6,26 +6,19 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/ysfgrl/gcore/gconf"
 	"github.com/ysfgrl/gcore/gerror"
 	"github.com/ysfgrl/gcore/gmodel"
 )
 
-var NotFoundUser = errors.New("not Found Context User")
-var NotFoundToken = errors.New("not Found Context Token")
-var ForbiddenError = errors.New("forbidden")
-var PermissionDenied = errors.New("permission denied")
-var TokenAlgNotFound = errors.New("token algorithm not found")
-var KeyNotFound = errors.New("Private Key not found")
-
 var contextKey = "userCtx"
 
 type BaseAuth struct {
-	Conf       *gconf.Token
-	Method     jwt.SigningMethod
-	PublicKey  interface{}
-	PrivateKey interface{}
-	isGuest    bool
+	TokenLookup string
+	AuthScheme  string
+	Method      jwt.SigningMethod
+	PublicKey   interface{}
+	PrivateKey  interface{}
+	isGuest     bool
 }
 
 // TODO create IToken for JWTToken and PasetoToken
@@ -45,7 +38,7 @@ func (auth *BaseAuth) CreateToken(payload Claims) (string, *gerror.Error) {
 }
 func (auth *BaseAuth) keyFunc(token *jwt.Token) (interface{}, error) {
 	if token.Header["alg"] != auth.Method.Alg() {
-		return "", TokenAlgNotFound
+		return "", errors.New(gerror.TokenAlgError.Code)
 	}
 	return auth.PublicKey, nil
 }
@@ -103,7 +96,7 @@ func (auth *BaseAuth) Require(ctx *fiber.Ctx) error {
 		ctx.Locals(contextKey, token)
 		return ctx.Next()
 	}
-	extractors := getExtractors(auth.Conf.TokenLookup, auth.Conf.AuthScheme)
+	extractors := getExtractors(auth.TokenLookup, auth.AuthScheme)
 	var tokenStr string
 	var err error
 

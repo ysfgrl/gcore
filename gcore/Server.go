@@ -3,33 +3,26 @@ package gcore
 import (
 	"errors"
 	"fmt"
+	"strconv"
+
 	"github.com/gofiber/fiber/v2"
-	"github.com/ysfgrl/gcore/gconf"
 	"github.com/ysfgrl/gcore/gerror"
 	"github.com/ysfgrl/gcore/gmodel"
-	"strconv"
 )
 
 type Server struct {
 	app         *fiber.App
 	isListening bool
-	conf        *gconf.Conf
 	modules     []IModule
 	middlewares []fiber.Handler
+	Host        string
+	Port        int
 }
 
 func NewServer() *Server {
 	return &Server{
 		modules:     make([]IModule, 0),
 		middlewares: make([]fiber.Handler, 0),
-		conf: &gconf.Conf{
-			Mongo: nil,
-			Token: nil,
-			Server: &gconf.Server{
-				Host: "0.0.0.0",
-				Port: 8080,
-			},
-		},
 	}
 }
 
@@ -47,11 +40,10 @@ func (server *Server) ListenAndServe() error {
 		server.app.Use(middleware)
 	}
 	for _, mod := range server.modules {
-		mod.SetConf(server.conf)
 		mod.Register(server.app)
 		mod.Init()
 	}
-	host := fmt.Sprintf("%s:%d", server.conf.Server.Host, server.conf.Server.Port)
+	host := fmt.Sprintf("%s:%d", server.Host, server.Port)
 	fmt.Println(host)
 	return server.app.Listen(host)
 }
@@ -63,9 +55,6 @@ func (server *Server) AddModule(module IModule) {
 	server.modules = append(server.modules, module)
 }
 
-func (server *Server) SetConf(conf *gconf.Conf) {
-	server.conf = conf
-}
 func (server *Server) IsListening() bool {
 	return server.isListening
 }

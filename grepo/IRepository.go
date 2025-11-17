@@ -3,7 +3,6 @@ package grepo
 import (
 	"context"
 
-	"github.com/ysfgrl/gcore/gconf"
 	"github.com/ysfgrl/gcore/gerror"
 	"github.com/ysfgrl/gcore/gmodel"
 	"go.mongodb.org/mongo-driver/bson"
@@ -22,5 +21,5 @@ type IRepository[DType any] interface {
 	CreateMany(ctx context.Context, schemas []DType) (int, *gerror.Error)
 	UpdateField(ctx context.Context, id primitive.ObjectID, key string, val any) *gerror.Error
 	UpdateFields(ctx context.Context, id primitive.ObjectID, fields map[string]any) *gerror.Error
-	Init(conf *gconf.Mongo)
+	Init()
 }
