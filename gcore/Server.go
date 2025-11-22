@@ -15,14 +15,16 @@ type Server struct {
 	isListening bool
 	modules     []IModule
 	middlewares []fiber.Handler
-	Host        string
-	Port        int
+	host        string
+	port        int
 }
 
-func NewServer() *Server {
+func NewServer(host string, port int) *Server {
 	return &Server{
 		modules:     make([]IModule, 0),
 		middlewares: make([]fiber.Handler, 0),
+		host:        host,
+		port:        port,
 	}
 }
 
@@ -43,7 +45,7 @@ func (server *Server) ListenAndServe() error {
 		mod.Register(server.app)
 		mod.Init()
 	}
-	host := fmt.Sprintf("%s:%d", server.Host, server.Port)
+	host := fmt.Sprintf("%s:%d", server.host, server.port)
 	fmt.Println(host)
 	return server.app.Listen(host)
 }

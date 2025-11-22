@@ -7,12 +7,11 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
-	"github.com/ysfgrl/gcore/gconf"
 	"github.com/ysfgrl/gcore/gerror"
 )
 
 type IStorage interface {
-	Init(conf *gconf.Storage)
+	Init()
 	GetInfo(ctx context.Context, key string) (minio.ObjectInfo, *gerror.Error)
 	CopyFromKey(ctx context.Context, storage IStorage, key string) (minio.UploadInfo, *gerror.Error)
 	GetBucket() string

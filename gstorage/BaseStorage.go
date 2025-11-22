@@ -9,13 +9,11 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
-	"github.com/ysfgrl/gcore/gconf"
 	"github.com/ysfgrl/gcore/gerror"
 )
 
 type MinioBase struct {
 	Client *minio.Client
-	Conf   *gconf.Storage
 	Bucket string
 	Prefix string
 }
@@ -46,7 +44,7 @@ func (b *MinioBase) exist(ctx context.Context) *gerror.Error {
 	}
 	exist, err := b.Client.BucketExists(ctx, b.Bucket)
 	if err != nil {
-		return gerror.StorageBucketNotExistError
+		return gerror.GetError(err)
 	}
 	if !exist {
 		return b.create(ctx)
@@ -154,9 +152,9 @@ func (b *MinioBase) DeleteByKey(ctx context.Context, key string) *gerror.Error {
 
 func (b *MinioBase) PubHeaderFile(ctx context.Context, fileHeader *multipart.FileHeader) (string, *gerror.Error) {
 
-	if err := b.exist(ctx); err != nil {
-		return "", err
-	}
+	//if err := b.exist(ctx); err != nil {
+	//	return "", err
+	//}
 	file, err := fileHeader.Open()
 	if err != nil {
 		return "", gerror.GetError(err)

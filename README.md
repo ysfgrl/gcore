@@ -103,6 +103,42 @@ import "github.com/ysfgrl/gcore/gconf"
 
 ```go
 
+import "github.com/gofiber/fiber/v2"
+import "github.com/golang-jwt/jwt/v5"
+import "github.com/ysfgrl/gcore/gauth"
+import "github.com/ysfgrl/gcore/gerror"
+
+var privateKey *rsa.PrivateKey = nil
+var publicKey *rsa.PublicKey = ni
+
+var IJWTAuth gauth.IAuth = nil
+
+type JWTAuth struct {
+    gauth.BaseAuth
+}
+
+func (a *JWTAuth) Init() {
+//init 
+}
+
+func init() {
+    IJWTAuth = &JWTAuth{
+        BaseAuth: gauth.BaseAuth{
+        PrivateKey: privateKey,
+        PublicKey:  publicKey,
+        AuthScheme: "Bearer",
+        Method:      jwt.SigningMethodRS256,
+        TokenLookup: "header:Authorization",
+    },
+}
+app := fiber.New()
+    app.Post("/test", IJWTAuth.Require, Test)
+}
+
+
+func Test(c *fiber.Ctx) error {
+    return c.Status(200).JSON(fiber.Map{})
+}
 
 ```
 

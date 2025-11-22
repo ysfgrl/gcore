@@ -15,6 +15,7 @@ import (
 )
 
 var createdAtKey = "createdAt"
+var updatedAtKey = "updatedAt"
 var idKey = "_id"
 var dnaKey = "dna"
 
@@ -32,23 +33,16 @@ type Repository[DType any] struct {
 }
 
 func (repo *Repository[DType]) GetById(ctx context.Context, id primitive.ObjectID, isAgg bool) (*DType, *gerror.Error) {
-
-	return repo.GetByQuery(ctx, bson.M{
-		idKey:  id,
-		dnaKey: primitive.Regex{Pattern: "^" + repo.Dna, Options: "i"},
-	}, isAgg)
-
+	return repo.GetByQuery(ctx, bson.M{idKey: id}, isAgg)
 }
 
 func (repo *Repository[DType]) GetByKey(ctx context.Context, key string, value any, isAgg bool) (*DType, *gerror.Error) {
-	return repo.GetByQuery(ctx, bson.M{
-		key: value,
-	}, isAgg)
+	return repo.GetByQuery(ctx, bson.M{key: value}, isAgg)
 }
 
 func (repo *Repository[DType]) GetByQuery(ctx context.Context, query bson.M, isAgg bool) (*DType, *gerror.Error) {
 	if len(repo.Dna) > 0 {
-		query[dnaKey] = repo.Dna
+		query[dnaKey] = primitive.Regex{Pattern: "^" + repo.Dna, Options: "i"}
 	}
 	var item DType
 	if !isAgg {
@@ -78,10 +72,7 @@ func (repo *Repository[DType]) GetByAggregate(ctx context.Context, query bson.M,
 		}
 		return &item, nil
 	}
-	return nil, &gerror.Error{
-		Code:   "mongo.notfound",
-		Detail: "Document not found",
-	}
+	return nil, gerror.MongoNotFoundDocument
 }
 
 func (repo *Repository[DType]) List(ctx context.Context, filters gmodel.ListRequest) (*gmodel.ListResponse[DType], *gerror.Error) {
@@ -124,6 +115,9 @@ func (repo *Repository[DType]) List(ctx context.Context, filters gmodel.ListRequ
 		} else {
 			query[key] = val
 		}
+	}
+	if len(repo.Dna) > 0 {
+		query[dnaKey] = primitive.Regex{Pattern: "^" + repo.Dna, Options: "i"}
 	}
 	pipeline := append(repo.AggregatePipe, bson.M{"$match": query})
 	pipeline = append(pipeline, bson.M{"$sort": bson.M{
@@ -175,6 +169,8 @@ func (repo *Repository[DType]) Create(ctx context.Context, schema DType) (*DType
 		return nil, gerror.GetError(err)
 	}
 	query[createdAtKey] = time.Now().UTC()
+	query[updatedAtKey] = time.Now().UTC()
+	query[dnaKey] = repo.Dna
 	res, err := repo.Collection.InsertOne(ctx, query)
 	if err != nil {
 		return nil, gerror.GetError(err)
@@ -200,6 +196,7 @@ func (repo *Repository[DType]) CreateMany(ctx context.Context, schemas []DType) 
 			return 0, gerror.GetError(err)
 		}
 		query[createdAtKey] = now
+		query[dnaKey] = repo.Dna
 		queries[i] = query
 	}
 	res, err := repo.Collection.InsertMany(ctx, queries)
@@ -208,6 +205,75 @@ func (repo *Repository[DType]) CreateMany(ctx context.Context, schemas []DType) 
 	}
 	return len(res.InsertedIDs), nil
 }
+func (repo *Repository[DType]) UpdateOne(ctx context.Context, filter bson.M, query bson.M, upsert bool) (*DType, *gerror.Error) {
+	for _, key := range constKeys {
+		delete(query, key)
+	}
+	if len(repo.Dna) > 0 {
+		filter[dnaKey] = primitive.Regex{Pattern: "^" + repo.Dna, Options: "i"}
+	}
+	query[updatedAtKey] = time.Now().UTC()
+	opt := options.Update().SetUpsert(upsert)
+	_, err := repo.Collection.UpdateOne(ctx, filter, bson.M{
+		"$set": query,
+		"$setOnInsert": bson.M{
+			createdAtKey: time.Now().UTC(),
+			dnaKey:       repo.Dna,
+		},
+	}, opt)
+	if err != nil {
+		return nil, gerror.GetError(err)
+	}
+	return repo.GetByQuery(ctx, filter, false)
+}
+
+func (repo *Repository[DType]) UpdateOneModel(ctx context.Context, filter bson.M, schema DType, upsert bool) (*DType, *gerror.Error) {
+	raw, err := bson.Marshal(schema)
+	if err != nil {
+		return nil, gerror.GetError(err)
+	}
+	update := bson.M{}
+	if err := bson.Unmarshal(raw, &update); err != nil {
+		return nil, gerror.GetError(err)
+	}
+	return repo.UpdateOne(ctx, filter, update, upsert)
+}
+
+func (repo *Repository[DType]) UpdateMany(ctx context.Context, schemas []DType, updateBy []string, createNotExist bool) (int, *gerror.Error) {
+
+	if len(updateBy) == 0 {
+		return 0, gerror.SaveFailed
+	}
+	var models []mongo.WriteModel
+	now := time.Now().UTC()
+	for i := range schemas {
+		value, err := bson.Marshal(schemas[i])
+		if err != nil {
+			return 0, gerror.GetError(err)
+		}
+		update := bson.M{}
+		if err = bson.Unmarshal(value, update); err != nil {
+			return 0, gerror.GetError(err)
+		}
+		update[createdAtKey] = now
+		update[dnaKey] = repo.Dna
+		filter := bson.M{}
+		for i2 := range updateBy {
+			filter[updateBy[i2]] = update[updateBy[i2]]
+		}
+		m := mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(bson.M{"$set": update})
+		if createNotExist {
+			m = m.SetUpsert(true)
+		}
+		models = append(models, m)
+	}
+	_, err := repo.Collection.BulkWrite(ctx, models)
+	if err != nil {
+		return 0, gerror.GetError(err)
+	}
+	return 0, nil
+}
+
 func (repo *Repository[DType]) Increment(ctx context.Context, id primitive.ObjectID, key string, val int) (bool, *gerror.Error) {
 	opts := options.Update().SetUpsert(false)
 	_, err := repo.Collection.UpdateOne(
@@ -223,47 +289,27 @@ func (repo *Repository[DType]) Increment(ctx context.Context, id primitive.Objec
 	return true, nil
 }
 
-func (repo *Repository[DType]) UpdateById(ctx context.Context, id primitive.ObjectID, schema DType) *gerror.Error {
+func (repo *Repository[DType]) UpdateById(ctx context.Context, id primitive.ObjectID, schema DType) (*DType, *gerror.Error) {
 
 	raw, err := bson.Marshal(schema)
 	if err != nil {
-		return gerror.GetError(err)
+		return nil, gerror.GetError(err)
 	}
 	update := bson.M{}
 	if err := bson.Unmarshal(raw, &update); err != nil {
-		return gerror.GetError(err)
+		return nil, gerror.GetError(err)
 	}
-	for i := range constKeys {
-		delete(update, constKeys[i])
-	}
-
-	_, err = repo.Collection.UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.D{{"$set", update}},
-	)
-	if err != nil {
-		return gerror.GetError(err)
-	}
-	return nil
+	return repo.UpdateOne(ctx, bson.M{idKey: id}, update, false)
 }
-
-func (repo *Repository[DType]) UpdateField(ctx context.Context, id primitive.ObjectID, field string, value any) *gerror.Error {
-
+func (repo *Repository[DType]) UpdateField(ctx context.Context, id primitive.ObjectID, field string, value any) (*DType, *gerror.Error) {
 	if slices.Contains(constKeys, field) {
-		return nil
+		return nil, gerror.SaveFailed
 	}
-	_, err := repo.Collection.UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.D{{"$set", bson.D{{field, value}}}},
-	)
-	if err != nil {
-		return gerror.GetError(err)
-	}
-	return nil
+	return repo.UpdateOne(ctx, bson.M{
+		idKey: id,
+	}, bson.M{field: value}, false)
 }
-func (repo *Repository[DType]) UpdateFields(ctx context.Context, id primitive.ObjectID, fields map[string]any) *gerror.Error {
+func (repo *Repository[DType]) UpdateFields(ctx context.Context, id primitive.ObjectID, fields map[string]any) (*DType, *gerror.Error) {
 
 	for key := range fields {
 		if slices.Contains(constKeys, key) {
@@ -271,39 +317,38 @@ func (repo *Repository[DType]) UpdateFields(ctx context.Context, id primitive.Ob
 		}
 	}
 	if len(fields) == 0 {
-		return nil
+		return nil, gerror.SaveFailed
 	}
-	set := bson.D{}
+	query := bson.M{}
 	for key, value := range fields {
-		set = append(set, bson.E{Key: key, Value: value})
+		query[key] = value
 	}
-	_, err := repo.Collection.UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.D{{"$set", set}},
-	)
-	if err != nil {
-		return gerror.GetError(err)
-	}
-	return nil
+	return repo.UpdateOne(ctx, bson.M{
+		idKey: id,
+	}, query, false)
 }
 
 func (repo *Repository[DType]) DeleteById(ctx context.Context, id primitive.ObjectID) *gerror.Error {
-	_, err := repo.Collection.DeleteOne(
-		ctx,
-		bson.M{idKey: id},
-	)
+	query := bson.M{idKey: id}
+	if len(repo.Dna) > 0 {
+		query[dnaKey] = primitive.Regex{Pattern: "^" + repo.Dna, Options: "i"}
+	}
+	_, err := repo.Collection.DeleteOne(ctx, query)
 	if err != nil {
 		return gerror.GetError(err)
 	}
 	return nil
 }
 
-func (repo *Repository[DType]) Count(ctx context.Context, query bson.D) (int64, *gerror.Error) {
+func (repo *Repository[DType]) Count(ctx context.Context, filters gmodel.ListRequest) (gmodel.Int, *gerror.Error) {
 	opts := options.Count().SetHint("_id_")
-	count, err := repo.Collection.CountDocuments(ctx, query, opts)
+	count, err := repo.Collection.CountDocuments(ctx, bson.D{}, opts)
 	if err != nil {
-		return 0, gerror.GetError(err)
+		return gmodel.Int{
+			Value: 0,
+		}, gerror.GetError(err)
 	}
-	return count, nil
+	return gmodel.Int{
+		Value: count,
+	}, nil
 }

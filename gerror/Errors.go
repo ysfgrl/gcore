@@ -112,6 +112,11 @@ var (
 		Detail: "Bucket Create Failed",
 		Level:  "error",
 	}
+	MongoNotFoundDocument = &Error{
+		Code:   "api.not_found_document",
+		Detail: "Not Found",
+		Level:  "error",
+	}
 
 	Errors = []*Error{
 		UserNF,
@@ -136,5 +141,6 @@ var (
 		StorageNotOnlineError,
 		StorageBucketNotExistError,
 		StorageBucketCreateError,
+		MongoNotFoundDocument,
 	}
 )

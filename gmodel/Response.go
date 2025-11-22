@@ -17,10 +17,18 @@ type ResponseStr struct {
 	Content Str           `json:"content"`
 	Error   *gerror.Error `json:"error"`
 }
+type ResponseInt struct {
+	Code    int           `json:"code"`
+	Content int           `json:"content"`
+	Error   *gerror.Error `json:"error"`
+}
 
 type Ok struct {
 	IsOk bool `json:"isOk"`
 }
 type Str struct {
 	Value string `json:"value"`
+}
+type Int struct {
+	Value int64 `json:"value"`
 }
